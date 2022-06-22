@@ -1,0 +1,25 @@
+[package]
+name = "chromaprint"
+version = "0.1.0"
+edition = "2021"
+authors = ["Assil Ksiksi <assil@ksiksi.net>"]
+description = "Safe Rust wrapper for Chromaprint"
+keywords = ["audio"]
+
+[dependencies]
+#chromaprint-sys = { git = "https://github.com/aksiksi/chromaprint-sys", rev = "890c36009d0d43b718424f1cd427b8b17bbd645e" }
+chromaprint-sys = { path = "../chromaprint-sys" }
+thiserror = "1"
+
+[features]
+default = []
+static = ["chromaprint-sys/static"]
+dynamic = ["chromaprint-sys/dynamic"]
+
+# FFT version to use when building from source.
+# Note: only one of these should be set.
+avfft = ["chromaprint-sys/avfft"]
+fftw3 = ["chromaprint-sys/fftw3"]
+fftw3f = ["chromaprint-sys/fftw3f"]
+kissfft = ["chromaprint-sys/kissfft"]
+vdsp = ["chromaprint-sys/vdsp"]
