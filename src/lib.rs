@@ -45,14 +45,12 @@ impl FingerprintRef for Hash {}
 #[derive(Debug)]
 pub struct Base64 {
     data: *const libc::c_char,
-    _p: std::marker::PhantomData<std::ffi::CString>,
 }
 
 #[derive(Debug)]
 pub struct Raw {
     data: *const u32,
     size: usize,
-    _p: std::marker::PhantomData<[u32]>,
 }
 
 #[derive(Debug)]
@@ -182,7 +180,6 @@ impl Context {
             inner: Raw {
                 data: data_ptr as *const _,
                 size: size as usize,
-                _p: std::marker::PhantomData,
             },
         })
     }
@@ -210,7 +207,6 @@ impl Context {
         Ok(Fingerprint {
             inner: Base64 {
                 data: out_ptr as *const _,
-                _p: std::marker::PhantomData,
             },
         })
     }
