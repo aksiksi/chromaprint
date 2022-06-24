@@ -77,9 +77,9 @@ impl Drop for Raw {
 }
 
 impl Fingerprint<Base64> {
-    pub fn get(&self) -> &str {
-        let s = unsafe { std::ffi::CStr::from_ptr(self.inner.data) }.to_str().unwrap();
-        s
+    pub fn get(&self) -> Result<&str> {
+        let s = unsafe { std::ffi::CStr::from_ptr(self.inner.data) }.to_str();
+        s.map_err(|e| Error::InvalidFingerprintString(e))
     }
 }
 
@@ -310,7 +310,7 @@ mod test {
             ]
         );
         assert_eq!(
-            ctx.get_fingerprint_base64().unwrap().get(),
+            ctx.get_fingerprint_base64().unwrap().get().unwrap(),
             "AQAAC0kkZUqYREkUnFAXHk8uuMZl6EfO4zu-4ABKFGESWIIMEQE"
         );
     }
