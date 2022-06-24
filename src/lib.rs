@@ -37,22 +37,24 @@ pub struct Fingerprint<F: FingerprintRef> {
     inner: F,
 }
 
-pub trait FingerprintRef {
-    // Hacky way to circumvent https://doc.rust-lang.org/error-index.html#E0366
-    fn drop(&mut self) {}
+pub trait FingerprintRef {}
+impl FingerprintRef for Base64 {}
+impl FingerprintRef for Raw {}
+impl FingerprintRef for Hash {}
+
+#[derive(Debug)]
+pub struct Base64 {
+    data: *const libc::c_char,
+    _p: std::marker::PhantomData<std::ffi::CString>,
 }
 
 #[derive(Debug)]
-pub struct Base64<'a> {
-    data: &'a str,
-    external: bool,
+pub struct Raw {
+    data: *const u32,
+    size: usize,
+    _p: std::marker::PhantomData<[u32]>,
 }
 
-#[derive(Debug)]
-pub struct Raw<'a> {
-    data: &'a [u32],
-    external: bool,
-}
 #[derive(Debug)]
 pub struct Hash(u32);
 
@@ -62,33 +64,29 @@ impl From<Hash> for u32 {
     }
 }
 
-impl<'a> FingerprintRef for Base64<'a> {
+impl Drop for Base64 {
     fn drop(&mut self) {
-        if self.external {
-            unsafe { chromaprint_dealloc(self.data.as_ptr() as *mut std::ffi::c_void) };
-        }
+        unsafe { chromaprint_dealloc(self.data as *mut std::ffi::c_void) };
     }
 }
 
-impl<'a> FingerprintRef for Raw<'a> {
+impl Drop for Raw {
     fn drop(&mut self) {
-        if self.external {
-            unsafe { chromaprint_dealloc(self.data.as_ptr() as *mut std::ffi::c_void) };
-        }
+        unsafe { chromaprint_dealloc(self.data as *mut std::ffi::c_void) };
     }
 }
 
-impl FingerprintRef for Hash {}
-
-impl<'a> Fingerprint<Base64<'a>> {
-    pub fn get(&self) -> &'a str {
-        self.inner.data
+impl Fingerprint<Base64> {
+    pub fn get(&self) -> &str {
+        let s = unsafe { std::ffi::CStr::from_ptr(self.inner.data) }.to_str().unwrap();
+        s
     }
 }
 
-impl<'a> Fingerprint<Raw<'a>> {
-    pub fn get(&self) -> &'a [u32] {
-        self.inner.data
+impl Fingerprint<Raw> {
+    pub fn get(&self) -> &[u32] {
+        let s = unsafe { std::slice::from_raw_parts(self.inner.data, self.inner.size) };
+        s
     }
 }
 
@@ -98,9 +96,9 @@ impl Fingerprint<Hash> {
     }
 }
 
-impl<'a> TryFrom<Fingerprint<Raw<'a>>> for Fingerprint<Hash> {
+impl TryFrom<Fingerprint<Raw>> for Fingerprint<Hash> {
     type Error = Error;
-    fn try_from(raw: Fingerprint<Raw<'a>>) -> Result<Self> {
+    fn try_from(raw: Fingerprint<Raw>) -> Result<Self> {
         let mut hash: u32 = 0;
         let data = raw.get();
         let rc =
@@ -109,12 +107,6 @@ impl<'a> TryFrom<Fingerprint<Raw<'a>>> for Fingerprint<Hash> {
             return Err(Error::OperationFailed);
         }
         return Ok(Fingerprint { inner: Hash(hash) });
-    }
-}
-
-impl<F: FingerprintRef> Drop for Fingerprint<F> {
-    fn drop(&mut self) {
-        self.inner.drop();
     }
 }
 
@@ -179,18 +171,18 @@ impl Context {
     }
 
     /// Returns the raw fingerprint.
-    pub fn get_fingerprint_raw<'a>(&'a mut self) -> Result<Fingerprint<Raw>> {
-        let mut data_ptr = std::ptr::null::<*const u32>() as *mut u32;
+    pub fn get_fingerprint_raw(&self) -> Result<Fingerprint<Raw>> {
+        let mut data_ptr = std::ptr::null_mut();
         let mut size: i32 = 0;
         let rc = unsafe { chromaprint_get_raw_fingerprint(self.ctx, &mut data_ptr, &mut size) };
         if rc != 1 {
             return Err(Error::OperationFailed);
         }
-        let s = unsafe { std::slice::from_raw_parts_mut(data_ptr, size as usize) };
         Ok(Fingerprint {
             inner: Raw {
-                data: s,
-                external: true,
+                data: data_ptr as *const _,
+                size: size as usize,
+                _p: std::marker::PhantomData,
             },
         })
     }
@@ -198,7 +190,7 @@ impl Context {
     /// Returns a hash of the raw fingerprint.
     ///
     /// Under the hood, Chromaprint computes a 32-bit [SimHash](https://en.wikipedia.org/wiki/SimHash) of the raw fingerprint.
-    pub fn get_fingerprint_hash(&mut self) -> Result<Fingerprint<Hash>> {
+    pub fn get_fingerprint_hash(&self) -> Result<Fingerprint<Hash>> {
         let mut hash: u32 = 0;
         let rc = unsafe { chromaprint_get_fingerprint_hash(self.ctx, &mut hash) };
         if rc != 1 {
@@ -209,20 +201,16 @@ impl Context {
 
     /// Returns a compressed version of the raw fingerprint in Base64 format. This is the format used by
     /// the [AcousticID](https://acoustid.org/) service.
-    pub fn get_fingerprint_base64<'a>(&'a mut self) -> Result<Fingerprint<Base64>> {
-        let mut out_ptr = std::ptr::null::<*const libc::c_char>() as *mut libc::c_char;
+    pub fn get_fingerprint_base64(&self) -> Result<Fingerprint<Base64>> {
+        let mut out_ptr = std::ptr::null_mut();
         let rc = unsafe { chromaprint_get_fingerprint(self.ctx, &mut out_ptr) };
         if rc != 1 {
             return Err(Error::OperationFailed);
         }
-        let s = unsafe { std::ffi::CStr::from_ptr(out_ptr as *const libc::c_char) }.to_str();
-        if s.is_err() {
-            return Err(Error::InvalidFingerprintString(s.err().unwrap()));
-        }
         Ok(Fingerprint {
             inner: Base64 {
-                data: s.unwrap(),
-                external: true,
+                data: out_ptr as *const _,
+                _p: std::marker::PhantomData,
             },
         })
     }
@@ -325,19 +313,6 @@ mod test {
             ctx.get_fingerprint_base64().unwrap().get(),
             "AQAAC0kkZUqYREkUnFAXHk8uuMZl6EfO4zu-4ABKFGESWIIMEQE"
         );
-    }
-
-    #[test]
-    fn test_raw_fingerprint_to_hash() {
-        let raw_data: &[u32] = &[19681, 22345, 312312, 453425];
-        let fingerprint = Fingerprint {
-            inner: Raw {
-                data: raw_data,
-                external: false,
-            },
-        };
-        let hash: Fingerprint<Hash> = fingerprint.try_into().unwrap();
-        assert_eq!(hash.get(), 17249);
     }
 
     #[test]
