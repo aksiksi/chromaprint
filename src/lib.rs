@@ -1,6 +1,8 @@
 extern crate chromaprint_sys;
 extern crate thiserror;
 
+use std::time::Duration;
+
 use chromaprint_sys::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -232,6 +234,105 @@ impl Drop for Context {
     }
 }
 
+/// DelayedFingerprinter allows you to generate Chromaprint fingerprints at a higher resolution
+/// than allowed by default.
+///
+/// By design, Chromaprint requires at least 3 seconds of audio to generate a fingerprint. To get
+/// more precise fingerprints, we can use multiple Contexts separated by a fixed delay. For example,
+/// to obtain a fingerprint for each second of audio, run 3 contexts separated by one second.
+///
+/// DelayedFingerprinter abstracts this logic out into a simple API. Once created, you just need to
+/// call `feed()` and check if any hashes were returned. Each hash will be accompnaied with a timestamp
+/// that indicates when the fingerprint was generated.
+pub struct DelayedFingerprinter {
+    ctx: Vec<Context>,
+    next_fingerprint: Vec<Duration>,
+    interval: Duration,
+    sample_rate: u32,
+    num_channels: u16,
+    started: bool,
+    clock: Duration,
+}
+
+impl DelayedFingerprinter {
+    pub fn new(
+        n: usize,
+        interval: Duration,
+        delay: Duration,
+        sample_rate: Option<u32>,
+        num_channels: u16,
+        start: Option<Duration>,
+    ) -> Self {
+        let mut ctx = Vec::with_capacity(n);
+        for _ in 0..n {
+            ctx.push(Context::default());
+        }
+
+        // Use the default Chromaprint sample rate if not specified.
+        let sample_rate = sample_rate.unwrap_or_else(|| ctx[0].sample_rate());
+
+        // Determine when the first fingerprint is needed for each delay.
+        let mut next_fingerprint = Vec::with_capacity(n);
+        for i in 0..n {
+            next_fingerprint.push(interval + delay.mul_f32(i as f32));
+        }
+
+        Self {
+            ctx,
+            next_fingerprint,
+            interval,
+            sample_rate,
+            num_channels,
+            started: false,
+            clock: start.unwrap_or(Duration::ZERO),
+        }
+    }
+
+    pub fn interval(&self) -> Duration {
+        self.interval
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn feed(&mut self, samples: &[i16]) -> Result<Vec<(Fingerprint<Raw>, Duration)>> {
+        // We can get multiple hashes in a single call (e.g., large number of samples).
+        let mut hashes = Vec::new();
+
+        if !self.started {
+            for ctx in self.ctx.iter_mut() {
+                ctx.start(self.sample_rate, self.num_channels)?;
+            }
+            self.started = true;
+        }
+
+        for (i, ctx) in self.ctx.iter_mut().enumerate() {
+            if self.clock >= self.next_fingerprint[i] {
+                ctx.finish()?;
+                hashes.push((
+                    ctx.get_fingerprint_raw()?,
+                    self.clock,
+                ));
+                ctx.start(self.sample_rate, self.num_channels)?;
+                self.next_fingerprint[i] = self.clock + self.interval;
+                break;
+            }
+        }
+
+        for ctx in &mut self.ctx {
+            ctx.feed(samples)?;
+        }
+
+        // Increment the clock based on number of samples and the configured sample rate.
+        self.clock += Duration::from_micros(
+            ((samples.len() as f32 / self.sample_rate as f32 / self.num_channels as f32) * 1e6) as u64
+        );
+
+        Ok(hashes)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -315,5 +416,38 @@ mod test {
     fn test_sample_rate() {
         let ctx = Context::default();
         assert_eq!(ctx.sample_rate(), 11025);
+    }
+
+    #[test]
+    fn test_delayed_fingerprinter() {
+        let mut s = DelayedFingerprinter::new(
+            2,
+            Duration::from_secs(3),
+            Duration::from_millis(100),
+            Some(44100),
+            1,
+            None,
+        );
+        let audio_path = PathBuf::from_str(env!("CARGO_MANIFEST_DIR"))
+            .unwrap()
+            .join("resources")
+            .join("test_stereo_44100.raw");
+        let data = load_audio(&audio_path);
+
+        // Feed 100ms chunks and ensure that exactly two hashes are returned.
+        let hashes = data
+            .chunks(4410)
+            .map(|samples| s.feed(samples).unwrap())
+            .flatten()
+            .map(|(f, ts)| (TryInto::<Fingerprint<Hash>>::try_into(f).unwrap().get(), ts))
+            .collect::<Vec<(u32, Duration)>>();
+
+        assert_eq!(
+            &hashes,
+            &[
+                (3739276119, Duration::from_secs(3)),
+                (3730870549, Duration::from_millis(3100))
+            ]
+        );
     }
 }
