@@ -252,6 +252,7 @@ pub struct DelayedFingerprinter {
     num_channels: u16,
     started: bool,
     clock: Duration,
+    clock_delta: Duration,
 }
 
 impl DelayedFingerprinter {
@@ -261,7 +262,6 @@ impl DelayedFingerprinter {
         delay: Duration,
         sample_rate: Option<u32>,
         num_channels: u16,
-        start: Option<Duration>,
     ) -> Self {
         let mut ctx = Vec::with_capacity(n);
         for _ in 0..n {
@@ -284,7 +284,8 @@ impl DelayedFingerprinter {
             sample_rate,
             num_channels,
             started: false,
-            clock: start.unwrap_or(Duration::ZERO),
+            clock: Duration::ZERO,
+            clock_delta: Duration::from_micros(1),
         }
     }
 
@@ -308,15 +309,13 @@ impl DelayedFingerprinter {
         }
 
         for (i, ctx) in self.ctx.iter_mut().enumerate() {
-            if self.clock >= self.next_fingerprint[i] {
+            // If the clock is within `clock_delta` of a fingerprint, assume it's time to take one. This
+            // is done to handle floating point precision issues during comparison.
+            if self.clock + self.clock_delta >= self.next_fingerprint[i] {
                 ctx.finish()?;
-                hashes.push((
-                    ctx.get_fingerprint_raw()?,
-                    self.clock,
-                ));
+                hashes.push((ctx.get_fingerprint_raw()?, self.clock));
                 ctx.start(self.sample_rate, self.num_channels)?;
                 self.next_fingerprint[i] = self.clock + self.interval;
-                break;
             }
         }
 
@@ -325,8 +324,8 @@ impl DelayedFingerprinter {
         }
 
         // Increment the clock based on number of samples and the configured sample rate.
-        self.clock += Duration::from_micros(
-            ((samples.len() as f32 / self.sample_rate as f32 / self.num_channels as f32) * 1e6) as u64
+        self.clock += Duration::from_secs_f64(
+            samples.len() as f64 / self.sample_rate as f64 / self.num_channels as f64,
         );
 
         Ok(hashes)
@@ -426,7 +425,6 @@ mod test {
             Duration::from_millis(100),
             Some(44100),
             1,
-            None,
         );
         let audio_path = PathBuf::from_str(env!("CARGO_MANIFEST_DIR"))
             .unwrap()
