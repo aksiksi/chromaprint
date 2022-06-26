@@ -7,8 +7,7 @@ description = "Safe Rust wrapper for Chromaprint"
 keywords = ["audio"]
 
 [dependencies]
-#chromaprint-sys = { git = "https://github.com/aksiksi/chromaprint-sys", rev = "890c36009d0d43b718424f1cd427b8b17bbd645e" }
-chromaprint-sys = { path = "../chromaprint-sys" }
+chromaprint-sys = { git = "https://github.com/aksiksi/chromaprint-sys" }
 thiserror = "1"
 
 [features]
