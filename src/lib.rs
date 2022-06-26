@@ -262,10 +262,15 @@ impl DelayedFingerprinter {
         delay: Duration,
         sample_rate: Option<u32>,
         num_channels: u16,
+        algorithm: Option<Algorithm>,
     ) -> Self {
         let mut ctx = Vec::with_capacity(n);
         for _ in 0..n {
-            ctx.push(Context::default());
+            if let Some(algorithm) = algorithm {
+                ctx.push(Context::new(algorithm));
+            } else {
+                ctx.push(Context::default());
+            }
         }
 
         // Use the default Chromaprint sample rate if not specified.
@@ -295,6 +300,10 @@ impl DelayedFingerprinter {
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    pub fn clock(&self) -> Duration {
+        self.clock
     }
 
     pub fn feed(&mut self, samples: &[i16]) -> Result<Vec<(Fingerprint<Raw>, Duration)>> {
@@ -425,6 +434,7 @@ mod test {
             Duration::from_millis(100),
             Some(44100),
             1,
+            None,
         );
         let audio_path = PathBuf::from_str(env!("CARGO_MANIFEST_DIR"))
             .unwrap()
