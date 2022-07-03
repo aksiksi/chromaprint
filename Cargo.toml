@@ -1,24 +1,29 @@
 [package]
-name = "chromaprint"
+name = "chromaprint-rust"
 version = "0.1.0"
 edition = "2021"
-authors = ["Assil Ksiksi <assil@ksiksi.net>"]
 description = "Safe Rust wrapper for Chromaprint"
-keywords = ["audio"]
+authors = ["Assil Ksiksi <assil@ksiksi.net>"]
+readme = "README.md"
+homepage = "https://github.com/aksiksi/chromaprint"
+repository = "https://github.com/aksiksi/chromaprint"
+license = "MIT"
+keywords = ["audio", "fingerprinting"]
+categories = ["multimedia::audio"]
 
 [dependencies]
-chromaprint-sys = { git = "https://github.com/aksiksi/chromaprint-sys" }
+chromaprint-sys-next = "1.5"
 thiserror = "1"
 
 [features]
 default = []
-static = ["chromaprint-sys/static"]
-dynamic = ["chromaprint-sys/dynamic"]
+static = ["chromaprint-sys-next/static"]
+dynamic = ["chromaprint-sys-next/dynamic"]
 
 # FFT version to use when building from source.
 # Note: only one of these should be set.
-avfft = ["chromaprint-sys/avfft"]
-fftw3 = ["chromaprint-sys/fftw3"]
-fftw3f = ["chromaprint-sys/fftw3f"]
-kissfft = ["chromaprint-sys/kissfft"]
-vdsp = ["chromaprint-sys/vdsp"]
+avfft = ["chromaprint-sys-next/avfft"]
+fftw3 = ["chromaprint-sys-next/fftw3"]
+fftw3f = ["chromaprint-sys-next/fftw3f"]
+kissfft = ["chromaprint-sys-next/kissfft"]
+vdsp = ["chromaprint-sys-next/vdsp"]

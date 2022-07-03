@@ -1,9 +1,9 @@
-extern crate chromaprint_sys;
+extern crate chromaprint_sys_next;
 extern crate thiserror;
 
 use std::time::Duration;
 
-use chromaprint_sys::*;
+use chromaprint_sys_next::*;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
