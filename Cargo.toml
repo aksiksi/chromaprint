@@ -18,7 +18,6 @@ thiserror = "1"
 [features]
 default = []
 static = ["chromaprint-sys-next/static"]
-dynamic = ["chromaprint-sys-next/dynamic"]
 
 # FFT version to use when building from source.
 # Note: only one of these should be set.
