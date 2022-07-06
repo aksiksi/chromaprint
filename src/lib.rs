@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use chromaprint_sys_next::*;
 
+pub mod simhash;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("operation failed")]
