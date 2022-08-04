@@ -7,6 +7,7 @@ use chromaprint_sys_next::*;
 
 pub mod simhash;
 
+/// Error type.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("operation failed")]
@@ -17,8 +18,12 @@ pub enum Error {
     InvalidArgument(String),
 }
 
+/// Result type.
 type Result<T> = std::result::Result<T, Error>;
 
+/// Chromaprint algorithm to use.
+///
+/// The default is [Algorithm::Test2].
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum Algorithm {
@@ -36,6 +41,14 @@ impl Default for Algorithm {
     }
 }
 
+/// Holds a single fingerprint returned by Chromaprint.
+///
+/// This can be one of:
+///
+/// 1. Base64: A fingerprint as a base-64 string. This is what you would use to
+///    upload a fingerprint to acousticid.
+/// 2. Raw: A fingerprint as a raw byte array. This is the normal representation.
+/// 3. Hash: A 32-bit hash of the raw fingerprint. Basically a compressed version of the raw fingerprint.
 #[derive(Debug)]
 pub struct Fingerprint<F: FingerprintRef> {
     inner: F,
@@ -215,6 +228,34 @@ impl Context {
         })
     }
 
+    /// Returns the current delay for the fingerprint.
+    ///
+    /// This value represents the duration of samples that had to be buffered before
+    /// Chromaprint could start generating the fingerprint.
+    pub fn get_delay(&self) -> Result<Duration> {
+        let delay_ms = unsafe { chromaprint_get_delay_ms(self.ctx) };
+        if delay_ms < 0 {
+            return Err(Error::OperationFailed);
+        }
+        let delay = Duration::from_millis(delay_ms as u64);
+        Ok(delay)
+    }
+
+    /// Returns the duration of a single item in the raw fingerprint.
+    ///
+    /// For example, if you compute a raw fingerprint and it contains 1000 32-bit values,
+    /// the duration returned by this method will tell you how much time (in audio samples)
+    /// is represented by each 32-bit value in the fingerprint.
+    pub fn get_item_duration(&self) -> Result<Duration> {
+        let item_duration_ms = unsafe { chromaprint_get_item_duration_ms(self.ctx) };
+        if item_duration_ms < 0 {
+            return Err(Error::OperationFailed);
+        }
+        let item_duration = Duration::from_millis(item_duration_ms as u64);
+        Ok(item_duration)
+    }
+
+    /// Clear the current fingerprint.
     pub fn clear_fingerprint(&mut self) -> Result<()> {
         let rc = unsafe { chromaprint_clear_fingerprint(self.ctx) };
         if rc != 1 {
